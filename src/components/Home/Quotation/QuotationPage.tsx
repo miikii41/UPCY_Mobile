@@ -247,8 +247,6 @@ const finalMaterials = [...selectedMaterialNames, ...(extraMaterial ? [extraMate
           <Subtitle16B style={{ color: 'black' }}>주문서</Subtitle16B>
           <View style={{ height: 2.5, backgroundColor: PURPLE, width: '100%', marginTop: 5, marginBottom: 20 }} />
           <Subtitle18B style={{ color: 'black', marginBottom: 5 }}>{serviceTitle}</Subtitle18B>
-          <Body14B style={{ color: 'black' }}>주문번호: 08WH9A</Body14B>
-          <Caption12M style={{ color: 'black' }}>2024-10-31 17:05</Caption12M>
 
 
         </View>
