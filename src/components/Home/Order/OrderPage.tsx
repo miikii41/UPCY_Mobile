@@ -1,16 +1,18 @@
-import React, { useState } from 'react';
-import { SafeAreaView, View, Text, FlatList, TouchableOpacity, Dimensions, Modal, StyleSheet } from 'react-native';
+import React, { useState, useEffect , useCallback} from 'react';
+import { SafeAreaView, View, Text, FlatList, TouchableOpacity, Dimensions, Modal, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { Tabs } from 'react-native-collapsible-tab-view';
 import styled from 'styled-components/native';
 import { Picker } from '@react-native-picker/picker';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+
 import { BLACK, LIGHTGRAY, PURPLE, GREEN } from '../../../styles/GlobalColor';
 
 import { Title20B, Body14R, Body16B, Caption11M } from '../../../styles/GlobalText.tsx';
 
 import { OrderProps, OrderStackParams } from './OrderManagement.tsx';
-
-
-
+import Request from '../../../common/requests';
+import { getAccessToken } from '../../../common/storage.js';
+import { StackScreenProps } from '@react-navigation/stack';
 
 
 interface OrderInfoProps {
@@ -21,15 +23,15 @@ interface OrderInfoProps {
   navigation: any;
 }
 
-const OrderInfo = ({ name, customer, estimated_price, is_online, navigation }: OrderInfoProps) => (
+const OrderInfo = ({ name, reformer, estimated_price, is_online, navigation }: OrderInfoProps) => (
   <InfoContainer>
-    <Text style={{ color: 'black', fontSize: 18, fontWeight: 'bold', marginBottom: 4 }}>{name}</Text>
-    <Text style={{ color: 'black', fontSize: 15, marginBottom: 4 }}>주문자: {customer}</Text>
     <Text style={{ color: 'black', fontSize: 15, marginBottom: 4 }}> </Text>
+    <Text style={{ color: 'black', fontSize: 18, fontWeight: 'bold', marginBottom: 4 }}>{name}</Text>
+    <Text style={{ color: 'grey', fontSize: 15, marginBottom: 4 }}>리포머: {reformer}</Text>
     <Text style={{ color: 'black', fontSize: 15, marginBottom: 4 }}>예상 결제 금액: {estimated_price}</Text>
     <Text style={{ color: 'black', fontSize: 15 }}>거래 방식: {is_online ? '비대면' : '대면'}</Text>
     <TouchableOpacity style={{ marginTop: 10, alignSelf: 'flex-end' }}
-      onPress={() => navigation.navigate('QuotationPage')}
+    onPress={() => navigation.navigate("QuotationReview")}
     >
       <Text style={{ color: 'gray', fontSize: 14, fontWeight: 'bold', textDecorationLine: 'underline' }}>주문서 확인</Text>
     </TouchableOpacity>
@@ -37,17 +39,30 @@ const OrderInfo = ({ name, customer, estimated_price, is_online, navigation }: O
 );
 
 
-const OrderStatusLabel = ({ status }: any) => {
-  switch (status) {
-    case 'before':
-      return <StatusText style={{ color: PURPLE }}>수락 대기중</StatusText>;
-    case 'progress':
-      return <StatusText style={{ color: PURPLE }}>배송중</StatusText>;
-    case 'completed':
-      return <StatusText style={{ color: PURPLE }}>거래 완료
-      </StatusText>;
-    default:
-      return null;
+
+
+
+const OrderStatusLabel = ({ order_status }: any) =>  {
+//console.log('🔍 order_status 데이터:', order_status);
+  const status = Array.isArray(order_status) && order_status.length > 0
+    ? order_status[0]?.status : '';
+   switch (status) {
+       case 'pending':
+         return <StatusText style={{ color: PURPLE }}>수락 대기중</StatusText>;
+       case 'accepted':
+         return <StatusText style={{ color: GREEN }}>수락됨</StatusText>;
+       case 'rejected':
+         return <StatusText style={{ color: 'red' }}>거절됨</StatusText>;
+       case 'received':
+         return <StatusText style={{ color: PURPLE }}>재료 수령</StatusText>;
+       case 'produced':
+         return <StatusText style={{ color: PURPLE }}>제작 완료</StatusText>;
+       case 'deliver':
+         return <StatusText style={{ color: PURPLE }}>배송중</StatusText>;
+       case 'end':
+         return <StatusText style={{ color: PURPLE }}>거래 완료</StatusText>;
+       default:
+         return <StatusText style={{ color: BLACK }}>상태 없음</StatusText>;
   }
 };
 
@@ -55,14 +70,18 @@ const OrderActionButtons = ({ status, navigation, onPress }: { status: string; n
 
 
   <ButtonContainer>
+
+
+    {status === 'progress' && (
+  <>
     <ActionButton>
       <ActionText>오픈채팅</ActionText>
     </ActionButton>
 
-    {status === 'progress' && (
-      <ActionButton onPress={onPress}>
-        <ActionText style={{ color: PURPLE }} >거래 완료하기</ActionText>
-      </ActionButton>
+    <ActionButton onPress={onPress}>
+      <ActionText style={{ color: PURPLE }}>거래 완료하기</ActionText>
+    </ActionButton>
+  </>
     )}
 
     {status === 'completed' && (
@@ -120,8 +139,141 @@ const OrderInfoContainer = styled.View`
 
 
 const OrderPage = ({ flatListRef, navigation, route }: OrderProps) => {
+  const [loading, setLoading] = useState(true);
+  const [orderList, setOrderList] = useState([]); // API에서 받은 주문목록
   const [selectedFilter, setSelectedFilter] = useState('전체');
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const request = Request();
+   const localNavigation = useNavigation();  //
+    console.log("📌 현재 navigation 객체:", localNavigation);
+
+    //주문 데이터, 서비스 데이터 정보 api 요청 (병렬처리)
+    const fetchOrders = async () => {
+      setLoading(true);
+      try {
+        const accessToken = await getAccessToken();
+        if (!accessToken) {
+          console.error('❌ Access token not found.');
+          return;
+        }
+
+        // 사용자 정보 가져오기
+        const userResponse = await request.get('/api/user', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+
+        if (userResponse.status !== 200 || !userResponse.data.email) {
+          console.error('❌ Failed to fetch user email.');
+          return;
+        }
+
+        const userEmail = userResponse.data.email;
+        //console.log('User Email:', userEmail);
+
+        if (!userEmail) {
+          console.error('❌ Email is missing!');
+          return;
+        }
+
+        // 주문 목록 가져오기
+        const orderResponse = await request.get(`/api/orders?email=${userEmail}&type=customer`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+
+        //로그로 주문 데이터 확인
+        console.log('서버 응답 주문 데이터:', orderResponse.data);
+        const orders = Array.isArray(orderResponse.data) ? orderResponse.data : [];
+
+        if (orderResponse.status === 200) {
+          console.log('✅ 주문 데이터:', orderResponse.data);
+        } else {
+          Alert.alert('주문 목록을 불러오는 데 실패했습니다.');
+        }
+
+     //  모든 `service_uuid` 수집 (중복 제거)
+          const serviceUuids = [...new Set(orders.map((order) => order.service_uuid).filter(Boolean))];
+
+          // 병렬 API 요청으로 service info 가져오기
+          const serviceResponses = await Promise.all(
+            serviceUuids.map(async (serviceUuid) => {
+              try {
+                const response = await request.get(`/api/market/${marketUuid}/service/${serviceUuid}`, {
+                  headers: { Authorization: `Bearer ${accessToken}` },
+                });
+
+                if (response.status === 200) {
+                  return {
+                    serviceUuid,
+                    service_title: response.data.service_title ?? '서비스명 없음',
+                    reformer_name: response.data.reformer_info?.user_info?.nickname ?? '익명 리포머',
+                  };
+                }
+              } catch (error) {
+                console.error(`❌ Failed to fetch service info for ${serviceUuid}:`, error);
+              }
+              return null;
+            })
+          );
+
+          // 응답 데이터를 Map으로 변환 (빠른 조회)
+          const serviceInfoMap = serviceResponses.reduce((acc, data) => {
+            if (data) acc[data.serviceUuid] = data;
+            return acc;
+          }, {});
+
+          // 주문 목록에 서비스 정보 추가
+          const updatedOrders = orders.map((order) => ({
+            ...order,
+            service_title: serviceInfoMap[order.service_uuid]?.service_title || '서비스명 없음',
+            reformer_name: serviceInfoMap[order.service_uuid]?.reformer_name || '익명 리포머',
+          }));
+
+          setOrderList(updatedOrders);
+
+      } catch (error) {
+        console.error('❌ 주문 데이터 불러오기 실패:', error);
+        Alert.alert('주문 데이터를 가져오는 중 오류가 발생했습니다.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    // 화면이 포커스될 때마다 주문 목록을 새로고침
+    useFocusEffect(
+      useCallback(() => {
+        fetchOrders();
+      }, [])
+    );
+
+    if (loading) {
+      return (
+        <View style={styles.centeredView}>
+          <ActivityIndicator size="large" color={PURPLE} />
+        </View>
+      );
+    }
+
+    if (!loading && (!orderList || orderList.length === 0)) {
+      return (
+        <View style={styles.centeredView}>
+          <Body16B>주문 내역이 없습니다.</Body16B>
+          <TouchableOpacity onPress={() => navigation.navigate('Home')} style={styles.homeButton}>
+            <Text style={{ color: 'white', fontSize: 16 }}>홈으로 가기</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    // 필터링된 주문 목록
+    const filteredOrders = orderList.filter((order) => {
+      const status = order.order_status?.[0]?.status || ''; // order_status에서 상태 값 추출
+        if (selectedFilter === '전체') return true;
+        if (selectedFilter === '거래 전') return status === 'pending';
+        if (selectedFilter === '거래 중') return status === 'accepted' || status === 'received' || status === 'produced' || status ==='deliver';
+        if (selectedFilter === '완료') return status === 'rejected' || status ==='end';
+
+    });
+
 
   // 거래 완료 버튼 클릭 핸들러
   const handleCompletedPress = () => {
@@ -142,7 +294,8 @@ const OrderPage = ({ flatListRef, navigation, route }: OrderProps) => {
   };
 
 
-
+/*
+//** 예시 하드코딩 주문 데이터
   const [orderlist, setOrderList] = useState([
     {
       id: '00001',
@@ -154,48 +307,19 @@ const OrderPage = ({ flatListRef, navigation, route }: OrderProps) => {
       photoUri: 'https://image.made-in-china.com/2f0j00efRbSJMtHgqG/Denim-Bag-Youth-Fashion-Casual-Small-Mini-Square-Ladies-Shoulder-Bag-Women-Wash-Bags.webp',
       status: 'progress',
     },
-    {
-      id: '00002',
-      name: '니트 서비스',
-      customer: '@@@',
-      orderDate: '2024-05-22',
-      estimated_price: '25000원',
-      is_online: false,
-      photoUri: 'https://image.made-in-china.com/2f0j00efRbSJMtHgqG/Denim-Bag-Youth-Fashion-Casual-Small-Mini-Square-Ladies-Shoulder-Bag-Women-Wash-Bags.webp',
-      status: 'completed',
-    },
-    {
-      id: '00003',
-      name: '에코백 서비스',
-      customer: '&&&',
-      orderDate: '2024-05-22',
-      estimated_price: '25000원',
-      is_online: false,
-      photoUri: 'https://image.made-in-china.com/2f0j00efRbSJMtHgqG/Denim-Bag-Youth-Fashion-Casual-Small-Mini-Square-Ladies-Shoulder-Bag-Women-Wash-Bags.webp',
-      status: 'before',
-    },
-    {
-      id: '00004',
-      name: '청바지 에코백 서비스',
-      customer: '$$$',
-      orderDate: '2024-06-22',
-      estimated_price: '25000원',
-      is_online: true,
-      photoUri: 'https://image.made-in-china.com/2f0j00efRbSJMtHgqG/Denim-Bag-Youth-Fashion-Casual-Small-Mini-Square-Ladies-Shoulder-Bag-Women-Wash-Bags.webp',
-      status: 'completed',
-    },
-  ]);
 
-  // 필터링된 주문 목록
-  const filteredOrders = orderlist.filter((order) => {
-    if (selectedFilter === '전체') return true;
-    if (selectedFilter === '거래 전') return order.status === 'before';
-    if (selectedFilter === '거래 중') return order.status === 'progress';
-    if (selectedFilter === '완료') return order.status === 'completed';
-  });
+  */
+
+
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#f0f0f0' }}>
+      {loading ? (
+        <View style={styles.centeredView}>
+          <ActivityIndicator size="large" color={PURPLE} />
+        </View>
+      ) : (
+
       <Tabs.FlatList
         ref={flatListRef}
         bounces={false}
@@ -204,27 +328,36 @@ const OrderPage = ({ flatListRef, navigation, route }: OrderProps) => {
         ListHeaderComponent={() => (
           <DropdownSection selectedFilter={selectedFilter} setSelectedFilter={setSelectedFilter} />
         )}
-        renderItem={({ item: order }: any) => (
+        renderItem={({ item: order }: any) => {
+            const orderDate = order.order_date ?? "날짜 없음";
+            // 첫 번째 order 이미지 가져오기 (현재는 임시, service_image로 대체 필요)
+            const orderImage = order.images?.find(img => img.image_type === "order")?.image || "";
+          return(
+          <View>
+          <Text style={{ color: 'black', fontSize: 15, fontWeight:'bold', marginBottom: 2, marginLeft:10 }}> {orderDate}</Text>
+
           <OrderInfoBox>
             <View style={{ marginTop: 15 }} />
             <View style={{ flexDirection: 'row' }}>
-              <ImageContainer source={{ uri: order.photoUri }} />
+              <ImageContainer source={{ uri: orderImage || '' }} />
               <OrderInfo
-                name={order.name}
-                customer={order.customer}
-                estimated_price={order.estimated_price}
-                is_online={order.is_online}
+                name={order.service_title || '알 수 없음'}
+                customer={order.reformer_name || '익명 리포머'}
+                estimated_price={`${order.total_price.toLocaleString()}원`}
+                is_online={order.transaction?.transaction_option === '비대면'}
                 navigation={navigation}
               />
             </View>
-            <OrderIDText style={{ color: BLACK }}>{order.id}</OrderIDText>
-            <OrderStatusLabel status={order.status} />
-            <OrderActionButtons status={order.status} navigation={navigation} onPress={handleCompletedPress} />
+            <OrderIDText>{order.order_uuid}</OrderIDText>
+            <OrderStatusLabel order_status={order.order_status} />
+            <OrderActionButtons status={order.order_status} navigation={navigation} onPress={() => setIsModalVisible(true)} />
           </OrderInfoBox>
-        )}
-        keyExtractor={(index) => index.toString()}
+          </View>
+        )}}
+        keyExtractor={(item: any) => item.order_uuid}
         style={{ marginBottom: 60 }}
       />
+      )}
 
       <Modal transparent={true} visible={isModalVisible} onRequestClose={handleCancel}>
         <ModalContainer>

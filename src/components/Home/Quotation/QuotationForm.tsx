@@ -6,6 +6,7 @@ import { BLACK, LIGHTGRAY, PURPLE } from '../../../styles/GlobalColor';
 import { Body16M, Caption11M, Caption12M, Body14R, Subtitle16B, Subtitle16M, Subtitle18M, Title20B } from '../../../styles/GlobalText';
 import { getStatusBarHeight } from 'react-native-safearea-height';
 import CheckBox from '@react-native-community/checkbox';
+import { getAccessToken } from '../../../common/storage.js';
 
 import InputBox from '../../../common/InputBox';
 import BottomButton from '../../../common/BottomButton';
@@ -201,7 +202,7 @@ const FilterSection = ({ label, items, showDuplicate = true, onMaterialSelect }:
 
 const QuotationForm = ({ navigation, route }: StackScreenProps<HomeStackParams, 'QuotationForm'>) => {
     const {serviceUuid,marketUuid} = route.params;
-
+    const [email, setEmail] = useState<string>(''); // 주문자 이메일 추가
     const [serviceInfo, setServiceInfo] = useState<{
       market_name: string;
       reformer_name: string;
@@ -210,7 +211,6 @@ const QuotationForm = ({ navigation, route }: StackScreenProps<HomeStackParams, 
       basic_price: number;
     } | null>(null);
     const defaultImageUri = 'https://image.made-in-china.com/2f0j00efRbSJMtHgqG/Denim-Bag-Youth-Fashion-Casual-Small-Mini-Square-Ladies-Shoulder-Bag-Women-Wash-Bags.webp';
-
 
      const [materials, setMaterials] = useState<MaterialDetail[]>([]);
      const [options, setOptions] = useState<ServiceDetailOption[]>([]);
@@ -227,11 +227,15 @@ const QuotationForm = ({ navigation, route }: StackScreenProps<HomeStackParams, 
         const fetchData = async () => {
           try {
             console.log(`Fetching data for serviceUuid: ${serviceUuid}`); //확인용
+
+            const accessToken = await getAccessToken();
+
     //api 요청 병렬 처리
-        const [infoResponse, materialResponse, optionResponse] = await Promise.all([
+        const [infoResponse, materialResponse, optionResponse, ordererResponse] = await Promise.all([
           request.get(`/api/market/${marketUuid}/service/${serviceUuid}`),
           request.get(`/api/market/${marketUuid}/service/${serviceUuid}/material`),
-          request.get(`/api/market/${marketUuid}/service/${serviceUuid}/option`)
+          request.get(`/api/market/${marketUuid}/service/${serviceUuid}/option`),
+          request.get(`/api/user`, {}, { headers: { Authorization: `Bearer ${accessToken}` } })
         ]);
 
 
@@ -270,6 +274,15 @@ const QuotationForm = ({ navigation, route }: StackScreenProps<HomeStackParams, 
             console.error('❌ Option API response error:', optionResponse ?? 'No Response');
            }
 
+       // orderer email 가져오기
+        if (ordererResponse.status === 200 && ordererResponse.data.email) {
+          setEmail(ordererResponse.data.email);
+          console.log('✅ 사용자 이메일:', ordererResponse.data.email);
+        } else {
+          console.error("❌ Orderer API response error:", ordererResponse.data);
+        }
+
+
           } catch (error) {
             console.error('Error fetching materials or options(api error):', error);
             Alert.alert('데이터를 가져오는 중 문제가 발생했습니다.(api error)');
@@ -290,42 +303,9 @@ const QuotationForm = ({ navigation, route }: StackScreenProps<HomeStackParams, 
       };
 
 
-  // const materials = ['폴리에스테르', '면', '스웨이드', '울', '캐시미어', '가죽', '데님', '추가 요청사항에 기재'];
   const meet = ['대면', '비대면'];
 
-/*
-  const options = [
-    {
-      option: 'option 0',
-      title: '유료 옵션',
-      description: '옵션입니다.',
-      price: '1,000 원',
-      image: 'https://example.com/image1.jpg'
 
-    },
-    {
-      option: 'option 1',
-      title: '단추',
-      description: '가방 입구에 똑딱이 단추를 추가할 수 있어요.',
-      price: '1,000 원',
-      image: 'https://example.com/image1.jpg'
-    },
-    {
-      option: 'option 2',
-      title: '지퍼',
-      description: '주머니에 귀여운 지퍼를 달아보세요.',
-      price: '1,000 원',
-      image: 'https://example.com/image2.jpg'
-    },
-    {
-      option: 'option 3',
-      title: '주머니',
-      description: '주머니를 달아보세요.',
-      price: '1,000 원',
-      image: 'https://example.com/image2.jpg'
-    },
-  ];
-  */
 
 
   const [showDuplicate] = useState(true);
@@ -418,6 +398,7 @@ useEffect(() => {
       //reformerName: serviceInfo?.reformer_name ?? '리폼러 없음',
       //reformerIntroduce: serviceInfo?.reformer_introduce ?? '소개 없음',
       //serviceImage: serviceInfo?.service_image ?? defaultImageUri,
+      orderer_email: email,
       basicPrice: serviceInfo?.basic_price ?? 0,
       photos,
       materialsList,

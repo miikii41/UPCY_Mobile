@@ -19,6 +19,7 @@ import Rejection from '../Quotation/Rejection.tsx';
 import SentRejection from '../Quotation/SentRejection.tsx';
 import NewOrders from './NewOrders.tsx';
 import QuotationForm from '../Quotation/QuotationForm.tsx';
+import QuotationReview from '../Quotation/QuotationReview.tsx';
 
 // type OrderInfoType = {
 //   id: string;
@@ -50,6 +51,7 @@ export type OrderStackParams = {
   QuotationConfirm: undefined;
   Rejection: undefined;
   SentRejection: undefined;
+  QuotationReview: QuotationProps;
 }
 
 const OrderStack = createStackNavigator<OrderStackParams>();
@@ -109,6 +111,7 @@ const OrderManagement = ({
         <OrderStack.Screen name="QuotationConfirm" component={QuotationConfirm} />
         <OrderStack.Screen name="Rejection" component={Rejection} />
         <OrderStack.Screen name="SentRejection" component={SentRejection} />
+        <OrderStack.Screen name="QuotationReview" component={QuotationReview} />
 
       </OrderStack.Navigator>
     </SafeAreaView>
