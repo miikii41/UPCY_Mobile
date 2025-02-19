@@ -42,6 +42,7 @@ const QuotationPage = ({ navigation, route }: StackScreenProps<OrderStackParams,
 
   const {
     serviceTitle = [],
+    email ='' ,
     photos = [],
     materialsList =[],
     selectedMaterialNames = [], //material_name
@@ -69,8 +70,7 @@ const selectedMaterialUUIDs = selectedMaterialNames
 
 
 
-const finalMaterials = [...selectedMaterialNames, ...(extraMaterial ? [extraMaterial] : [])].filter(Boolean).join(', ');
-
+  const finalMaterials = [...selectedMaterialNames, ...(extraMaterial ? [extraMaterial] : [])].filter(Boolean).join(', '); //전체 재질
   const fullAddress = `${address} ${detailedAddress}`.trim();  //전체주소(fullAddress) 생성
 
   const [modalVisible, setModalVisible] = useState<boolean>(false);
@@ -154,8 +154,8 @@ const finalMaterials = [...selectedMaterialNames, ...(extraMaterial ? [extraMate
     );
     formData.append('orderer_name', name);
     formData.append('orderer_phone_number', tel);
-    formData.append('orderer_email', ''); // 선택 사항
     formData.append('orderer_address', fullAddress);
+    formData.append('orderer_email', email);
 
     console.log('FormData being sent:', formData);
 
@@ -179,7 +179,13 @@ const finalMaterials = [...selectedMaterialNames, ...(extraMaterial ? [extraMate
 
       if (response && response.status === 201) { // 주문 생성 성공
         const result = response.data; // 서버 응답 데이터
-        Alert.alert('주문 성공!', `주문번호: ${result.order_uuid}`);
+         console.log('Order Created:', {
+                order_uuid: result.order_uuid,
+                order_status: result.order_status,
+                order_date: result.order_date,
+              });
+
+        Alert.alert('주문 성공!');
         navigation.navigate('SentQuotation'); // 성공 시 sentquotation으로 이동
       } else {
           console.error('Server Response:', response.data);
@@ -247,8 +253,6 @@ const finalMaterials = [...selectedMaterialNames, ...(extraMaterial ? [extraMate
           <Subtitle16B style={{ color: 'black' }}>주문서</Subtitle16B>
           <View style={{ height: 2.5, backgroundColor: PURPLE, width: '100%', marginTop: 5, marginBottom: 20 }} />
           <Subtitle18B style={{ color: 'black', marginBottom: 5 }}>{serviceTitle}</Subtitle18B>
-          <Body14B style={{ color: 'black' }}>주문번호: 08WH9A</Body14B>
-          <Caption12M style={{ color: 'black' }}>2024-10-31 17:05</Caption12M>
 
 
         </View>
